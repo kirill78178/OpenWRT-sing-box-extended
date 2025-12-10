@@ -6,8 +6,16 @@ API_URL="https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest
 ARCHIVE_NAME="sing-box-latest.tar.gz"
 DEST_FILE="/usr/bin/sing-box"
 
+if [ -f "/opt/etc/init.d/podkop" ] || [ -f "/etc/init.d/podkop" ]; then
+    SERVICE_NAME="podkop"
+    echo "[*] Сервис: $SERVICE_NAME"
+else
+    SERVICE_NAME="sing-box"
+    echo "[*] Сервис: $SERVICE_NAME"
+fi
+
 HOST_ARCH=$(uname -m)
-echo "[*] Ваша архитектура: $HOST_ARCH"
+echo "[*] Архитектура: $HOST_ARCH"
 
 case $HOST_ARCH in
   aarch64) ARCH_SUFFIX="arm64" ;;
@@ -26,16 +34,14 @@ echo 3 > /proc/sys/vm/drop_caches
 FREE_RAM_KB=$(awk '/MemFree/ {print $2}' /proc/meminfo)
 
 if [ "$FREE_RAM_KB" -gt 81920 ]; then
-    echo "[*] Памяти достаточно. Использую RAM (/tmp)."
     WORK_DIR="/tmp/sing-box-install"
 else
-    echo "[*] Мало памяти. Использую Flash ($HOME)."
     WORK_DIR="$HOME/sing-box-install_tmp"
 fi
 
 FILE_PATTERN="linux-$ARCH_SUFFIX.tar.gz"
 
-echo "[*] Ищу ссылку на GitHub..."
+echo "[*] Получаю ссылку..."
 DOWNLOAD_URL=$(wget -qO- "$API_URL" | tr ',' '\n' | grep "browser_download_url" | grep "$FILE_PATTERN" | head -n 1 | awk -F '"' '{print $4}')
 
 if [ -z "$DOWNLOAD_URL" ]; then
@@ -47,8 +53,7 @@ rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
-echo "[*] Качаю обновление..."
-
+echo "[*] Скачиваю..."
 wget -q --no-check-certificate -O "$ARCHIVE_NAME" "$DOWNLOAD_URL"
 
 if [ ! -s "$ARCHIVE_NAME" ]; then
@@ -56,12 +61,9 @@ if [ ! -s "$ARCHIVE_NAME" ]; then
     exit 1
 fi
 
-if [ -f "$DEST_FILE" ]; then
-    echo "[*] Останавливаю текущий sing-box..."
-    service sing-box stop >/dev/null 2>&1 || true
-    killall sing-box >/dev/null 2>&1 || true
-    sleep 3
-fi
+echo "[*] Останавливаю $SERVICE_NAME..."
+service "$SERVICE_NAME" stop || true
+sleep 2
 
 sync
 echo 3 > /proc/sys/vm/drop_caches
@@ -70,21 +72,23 @@ echo "[*] Распаковываю..."
 tar -xzf "$ARCHIVE_NAME"
 rm -f "$ARCHIVE_NAME"
 
-echo "[*] Ищу бинарник..."
 BINARY_PATH=$(find . -type f -name sing-box | head -n 1)
 
 if [ -z "$BINARY_PATH" ]; then
-    echo "[!] ОШИБКА: Бинарник не найден внутри архива."
+    echo "[!] ОШИБКА: Бинарник не найден."
+    service "$SERVICE_NAME" start || true
     rm -rf "$WORK_DIR"
     exit 1
 fi
 
-echo "[*] Обновляю файл в $DEST_FILE..."
+echo "[*] Заменяю файл..."
 mv -f "$BINARY_PATH" "$DEST_FILE"
 chmod +x "$DEST_FILE"
 
 cd /
 rm -rf "$WORK_DIR"
 
-echo "[+] Успешно! Перезагружаю роутер..."
-reboot
+echo "[*] Запускаю $SERVICE_NAME..."
+service "$SERVICE_NAME" start
+
+echo "[+] Успешно."
