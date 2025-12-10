@@ -21,7 +21,7 @@ case $HOST_ARCH in
     ARCH_SUFFIX="amd64"
     ;;
   mips | mipsle | mipsel)
-    ARCH_SUFFIX="mipsle"
+    ARCH_SUFFIX="mipsle-softfloat"
     ;;
   *)
     echo "[!] ОШИБКА: Архитектура $HOST_ARCH не поддерживается."
