@@ -1,7 +1,5 @@
 #!/bin/sh
 
-set -e
-
 API_URL="https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest"
 ARCHIVE_NAME="sing-box-latest.tar.gz"
 DEST_FILE="/usr/bin/sing-box"
@@ -11,6 +9,13 @@ G="\033[1;32m"
 Y="\033[1;33m"
 C="\033[1;36m"
 N="\033[0m"
+
+fail() {
+    printf "${R}[!] ОШИБКА: %s${N}\n" "$1"
+    [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"
+    [ "$SERVICE_STOPPED" = "1" ] && service "$SERVICE_NAME" start 2>/dev/null
+    exit 1
+}
 
 if command -v curl >/dev/null 2>&1; then
     FETCH="curl -fsSL --insecure"
@@ -50,15 +55,14 @@ esac
 
 CURRENT_VER=""
 if [ -f "$DEST_FILE" ]; then
-    CURRENT_VER=$("$DEST_FILE" version 2>/dev/null | head -n 1 | awk '{print $NF}')
+    CURRENT_VER=$("$DEST_FILE" version 2>/dev/null | head -n 1 | awk '{print $NF}') || true
 fi
 
 printf "${C}[*] Проверяю обновления...${N}\n"
 API_RESPONSE=$($FETCH "$API_URL" 2>/dev/null) || true
 
 if [ -z "$API_RESPONSE" ]; then
-    printf "${R}[!] ОШИБКА: Не удалось подключиться к GitHub API. Проверьте соединение.${N}\n"
-    exit 1
+    fail "Не удалось подключиться к GitHub API. Проверьте соединение."
 fi
 
 LATEST_TAG=$(echo "$API_RESPONSE" | tr ',' '\n' | grep '"tag_name"' | head -n 1 | awk -F '"' '{print $4}')
@@ -81,8 +85,7 @@ DOWNLOAD_URL=$(echo "$API_RESPONSE" \
   | awk -F '"' '{print $4}')
 
 if [ -z "$DOWNLOAD_URL" ]; then
-    printf "${R}[!] ОШИБКА: Файл для архитектуры '$HOST_ARCH' ($ARCH_SUFFIX) не найден.${N}\n"
-    exit 1
+    fail "Файл для архитектуры '$HOST_ARCH' ($ARCH_SUFFIX) не найден."
 fi
 
 sync
@@ -101,40 +104,38 @@ mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
 printf "${C}[*] Скачиваю и устанавливаю...${N}\n"
-$DOWNLOAD "$ARCHIVE_NAME" "$DOWNLOAD_URL"
+$DOWNLOAD "$ARCHIVE_NAME" "$DOWNLOAD_URL" || fail "Не удалось скачать файл."
 
 if [ ! -s "$ARCHIVE_NAME" ]; then
-    printf "${R}[!] ОШИБКА: Файл пустой или не скачался.${N}\n"
-    rm -rf "$WORK_DIR"
-    exit 1
+    fail "Скачанный файл пустой."
 fi
 
+SERVICE_STOPPED="1"
 service "$SERVICE_NAME" stop 2>/dev/null || true
 sleep 2
 
 sync
 echo 3 > /proc/sys/vm/drop_caches 2>/dev/null || true
 
-tar -xzf "$ARCHIVE_NAME"
+tar -xzf "$ARCHIVE_NAME" || fail "Не удалось распаковать архив."
 rm -f "$ARCHIVE_NAME"
 
 BINARY_PATH=$(find . -type f -name sing-box | head -n 1)
 
 if [ -z "$BINARY_PATH" ]; then
-    printf "${R}[!] ОШИБКА: Бинарник не найден в архиве.${N}\n"
-    service "$SERVICE_NAME" start 2>/dev/null || true
-    rm -rf "$WORK_DIR"
-    exit 1
+    fail "Бинарник не найден в архиве."
 fi
 
-mv -f "$BINARY_PATH" "$DEST_FILE"
+mv -f "$BINARY_PATH" "$DEST_FILE" || fail "Не удалось заменить файл."
 chmod +x "$DEST_FILE"
 
-NEW_VERSION=$("$DEST_FILE" version 2>/dev/null | head -n 1 | awk '{print $NF}')
+NEW_VERSION=$("$DEST_FILE" version 2>/dev/null | head -n 1 | awk '{print $NF}') || true
 
 cd /
 rm -rf "$WORK_DIR"
+WORK_DIR=""
 
+SERVICE_STOPPED=""
 service "$SERVICE_NAME" start
 
 printf "${G}[+] Готово: ${Y}${CURRENT_VER:-н/д}${G} -> ${Y}${NEW_VERSION:-н/д}${N}\n"
