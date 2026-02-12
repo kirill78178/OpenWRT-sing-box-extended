@@ -48,12 +48,13 @@ case $HOST_ARCH in
     ;;
 esac
 
+CURRENT_VER=""
 if [ -f "$DEST_FILE" ]; then
-    CURRENT_VERSION=$("$DEST_FILE" version 2>/dev/null | head -n 1 || echo "")
+    CURRENT_VER=$("$DEST_FILE" version 2>/dev/null | head -n 1 | awk '{print $NF}')
 fi
 
 printf "${C}[*] Проверяю обновления...${N}\n"
-API_RESPONSE=$($FETCH "$API_URL" 2>/dev/null) || API_RESPONSE=""
+API_RESPONSE=$($FETCH "$API_URL" 2>/dev/null) || true
 
 if [ -z "$API_RESPONSE" ]; then
     printf "${R}[!] ОШИБКА: Не удалось подключиться к GitHub API. Проверьте соединение.${N}\n"
@@ -61,10 +62,9 @@ if [ -z "$API_RESPONSE" ]; then
 fi
 
 LATEST_TAG=$(echo "$API_RESPONSE" | tr ',' '\n' | grep '"tag_name"' | head -n 1 | awk -F '"' '{print $4}')
-CURRENT_VER=$(echo "$CURRENT_VERSION" | awk '{print $NF}')
 LATEST_VER=$(echo "$LATEST_TAG" | sed 's/^v//')
 
-printf "${C}[*] Текущая: ${Y}${CURRENT_VER:-не установлен}${C} | Последняя: ${Y}${LATEST_TAG:-неизвестно}${N}\n"
+printf "${C}[*] Текущая: ${Y}${CURRENT_VER:-не установлен}${C} | Последняя: ${Y}${LATEST_VER:-неизвестно}${N}\n"
 
 if [ -n "$CURRENT_VER" ] && [ -n "$LATEST_VER" ] && [ "$CURRENT_VER" = "$LATEST_VER" ]; then
     printf "${G}[+] Уже установлена последняя версия. Обновление не требуется.${N}\n"
